@@ -43,6 +43,7 @@ var keychain = function() {
 
   // Maximum length of each record in bytes
   var MAX_PW_LEN_BYTES = 64;
+  var ENC_PWD_LEN = 600;
   
   // Flag to indicate whether password manager is "ready" or not
   var ready = false;
@@ -123,7 +124,7 @@ var keychain = function() {
       var domain_mac = bitarray_to_base64(HMAC(priv.secrets.hmac_key, name));
       var password = priv.data.entries[domain_mac];
       if (password != undefined) {
-	  var decrypted = bitarray_to_base64(dec_gcm(priv.secrets.cipher, base64_to_bitarray(password)));
+	  var decrypted = bitarray_to_base64(dec_gcm(priv.secrets.cipher, password));
 	  // If no swap attacks/password matches the domain
 	  var domain_index = decrypted.indexOf(domain_mac);
 	  
@@ -159,24 +160,28 @@ var keychain = function() {
   * Return Type: void
   */
   keychain.set = function(name, value) {
-      if (priv.secrets.master_key == undefined) {
-	  throw "Keychain not initialized!"
-      }
+      keychain.init_check();
       var domain_mac = HMAC(priv.secrets.hmac_key, name);
       var salt = HMAC(priv.secrets.salt_key, priv.data.salt_counter);
       priv.data.salt_counter++;
 
       var pwd_blob = bitarray_concat(string_to_bitarray(value), domain_mac);
       pwd_blob = bitarray_concat(pwd_blob, salt);
-      var padding_len = 600 - bitarray_len(pwd_blob) - 1;
+      var padding = keychain.make_padding(pwd_blob);
+
+      pwd_blob = bitarray_to_base64(bitarray_concat(pwd_blob, string_to_bitarray(padding)));
+
+      priv.data.entries[bitarray_to_base64(domain_mac)] = enc_gcm(priv.secrets.cipher, pwd_blob);
+  }
+
+    keychain.make_padding = function(pwd_bitarray) {
+      var padding_len = ENC_PWD_LEN - bitarray_len(pwd_bitarray) - 1;
       var padding = "1";
       for (var i=0; i < padding_len; i++) {
 	  padding += "0";
-      }
-      pwd_blob = bitarray_concat(pwd_blob, string_to_bitarray(padding));
-
-      priv.data.entries[bitarray_to_base64(domain_mac)] = bitarray_to_base64(enc_gcm(priv.secrets.cipher, pwd_blob));
-  }
+      }	
+	return padding;
+    }
 
   /**
     * Removes the record with name from the password manager. Returns true

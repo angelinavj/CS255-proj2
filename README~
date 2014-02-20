@@ -1,0 +1,9 @@
+1. How do we hide the lengths of the passwords stored in our manager?
+=====================================================================
+
+We make all encrypted password blobs the same length of 600 bytes. Since
+passwords are a max of 64 bytes, HMAC(domain) = 256 bytes, and salt = 256
+bytes, the maximum "real" information is 64 + 256 + 256 = 576 bytes. Thus,
+if we pad all password blobs to 600 bytes before authenticated encryption,
+we know that all password blobs will have the same length.
+
