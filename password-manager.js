@@ -59,6 +59,15 @@ var keychain = function() {
     */
   keychain.init = function(password) {
     priv.data.version = "CS 255 Password Manager v1.0";
+    priv.data.kdf_salt = random_bitarray(256);
+    priv.secrets.master_key = KDF(password, priv.data.kdf_salt);
+      priv.secrets.enc_key = bitarray_slice(HMAC(priv.secrets.master_key, "0"), 0, 128);
+      priv.secrets.hmac_key = HMAC(priv.secrets.master_key, "1");
+      priv.secrets.salt_key = HMAC(priv.secrets.master_key, "2");
+      priv.data.salt_counter = 0;
+      priv.secrets.cipher = setup_cipher(priv.secrets.enc_key);
+      priv.data.pwd_check = enc_gcm(priv.secrets.cipher, "0");
+      priv.data.entries = {};
   };
 
   /**
@@ -110,9 +119,34 @@ var keychain = function() {
     * Return Type: string
     */
   keychain.get = function(name) {
-    throw "Not implemented!";
+      keychain.init_check();
+      var domain_mac = bitarray_to_base64(HMAC(priv.secrets.hmac_key, name));
+      var password = priv.data.entries[domain_mac];
+      if (password != undefined) {
+	  var decrypted = bitarray_to_base64(dec_gcm(priv.secrets.cipher, base64_to_bitarray(password)));
+	  // If no swap attacks/password matches the domain
+	  var domain_index = decrypted.indexOf(domain_mac);
+	  
+	  for(var key in priv.data.entries) {
+	      console.log(key);
+	      console.log(priv.data.entries[key]);
+	  }
+
+	  console.log(domain_index);
+	  if (domain_index != -1) {
+	      var decrypted_pwd = decrypted.substring(0, domain_index);
+	      console.log(decrypted_pwd);
+	      return decrypted_pwd;
+	  }
+      }
+      throw "Bad keychain.get"
   }
 
+    keychain.init_check = function() {
+	if (priv.secrets.master_key == undefined) {
+	  throw "Keychain not initialized!"
+	}
+    }
   /** 
   * Inserts the domain and associated data into the KVS. If the domain is
   * already in the password manager, this method should update its value. If
@@ -125,7 +159,23 @@ var keychain = function() {
   * Return Type: void
   */
   keychain.set = function(name, value) {
-    throw "Not implemented!";
+      if (priv.secrets.master_key == undefined) {
+	  throw "Keychain not initialized!"
+      }
+      var domain_mac = HMAC(priv.secrets.hmac_key, name);
+      var salt = HMAC(priv.secrets.salt_key, priv.data.salt_counter);
+      priv.data.salt_counter++;
+
+      var pwd_blob = bitarray_concat(string_to_bitarray(value), domain_mac);
+      pwd_blob = bitarray_concat(pwd_blob, salt);
+      var padding_len = 600 - bitarray_len(pwd_blob) - 1;
+      var padding = "1";
+      for (var i=0; i < padding_len; i++) {
+	  padding += "0";
+      }
+      pwd_blob = bitarray_concat(pwd_blob, string_to_bitarray(padding));
+
+      priv.data.entries[bitarray_to_base64(domain_mac)] = bitarray_to_base64(enc_gcm(priv.secrets.cipher, pwd_blob));
   }
 
   /**
