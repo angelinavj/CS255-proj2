@@ -138,26 +138,27 @@ var keychain = function() {
     var domain_mac = bitarray_to_base64(HMAC(priv.secrets.hmac_key, name));
     var password = priv.data.entries[domain_mac];
     if (password != undefined) {
-	    var decrypted = bitarray_to_base64(lib.dec_gcm(priv.secrets.cipher, password));
-	    // If no swap attacks/password matches the domain
-      // TODO: do something less hacky!!
-	    var domain_index = decrypted.indexOf(domain_mac.slice(0, domain_mac.length-1));
-	    
-	    if (domain_index != -1) {
-	        var decrypted_pwd = decrypted.substring(0, domain_index);
-	        return decrypted_pwd;
-	    } else {
-        throw "Bad keychain.get"
-      }
+	var decrypted = bitarray_to_base64(lib.dec_gcm(priv.secrets.cipher, password));
+	// If no swap attacks/password matches the domain
+	// TODO: do something less hacky!!
+	var domain_index = decrypted.indexOf(domain_mac.slice(0, domain_mac.length-1));
+	
+	if (domain_index != -1) {
+	    var decrypted_pwd = decrypted.substring(0, domain_index);
+	    return decrypted_pwd;
+	} else {
+            throw "Bad keychain.get"
+	}
     }
     return null;
   }
 
   keychain.init_check = function() {
-	  if (priv.secrets.master_key == undefined) {
-	    throw "Keychain not initialized!"
-	  }
+      if (priv.secrets.master_key == undefined) {
+	  throw "Keychain not initialized!"
+      }
   }
+
   /** 
   * Inserts the domain and associated data into the KVS. If the domain is
   * already in the password manager, this method should update its value. If
