@@ -43,7 +43,8 @@ var cksum = data[1];
 
 console.log("Loading database");
 var new_keychain = password_manager.keychain();
-new_keychain.load(password, contents, cksum);
+var return_val = new_keychain.load(password, contents, cksum);
+console.log(return_val);
 
 console.log("Checking contents of new database");
 for (var k in kvs) {

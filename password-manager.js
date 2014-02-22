@@ -43,7 +43,7 @@ var keychain = function() {
 
   // Maximum length of each record in bytes
   var MAX_PW_LEN_BYTES = 64;
-  var ENC_PWD_LEN = 600;
+  var ENC_PWD_LEN = 320;
   
   // Flag to indicate whether password manager is "ready" or not
   var ready = false;
@@ -64,10 +64,8 @@ var keychain = function() {
       priv.secrets.master_key = KDF(password, priv.data.kdf_salt);
       priv.secrets.enc_key = bitarray_slice(HMAC(priv.secrets.master_key, "0"), 0, 128);
       priv.secrets.hmac_key = HMAC(priv.secrets.master_key, "1");
-      priv.secrets.salt_key = HMAC(priv.secrets.master_key, "2");
-      priv.data.salt_counter = 0;
       priv.secrets.cipher = setup_cipher(priv.secrets.enc_key);
-      priv.data.pwd_check = enc_gcm(priv.secrets.cipher, "0");
+      priv.data.pwd_check = HMAC(priv.secrets.hmac_key, "0");
       priv.data.entries = {};
   };
 
@@ -97,10 +95,9 @@ var keychain = function() {
     priv.secrets.master_key = KDF(password, priv.data.kdf_salt);
     priv.secrets.enc_key = bitarray_slice(HMAC(priv.secrets.master_key, "0"), 0, 128);
     priv.secrets.hmac_key = HMAC(priv.secrets.master_key, "1");
-    priv.secrets.salt_key = HMAC(priv.secrets.master_key, "2");
     priv.secrets.cipher = setup_cipher(priv.secrets.enc_key);
 
-    return (enc_gcm(priv.secrets.cipher, "0") === priv.data.pwd_check);
+    return bitarray_equal(HMAC(priv.secrets.hmac_key, "0"), priv.data.pwd_check);
   };
 
   /**
@@ -140,7 +137,6 @@ var keychain = function() {
     if (password != undefined) {
 	var decrypted = bitarray_to_base64(lib.dec_gcm(priv.secrets.cipher, password));
 	// If no swap attacks/password matches the domain
-	// TODO: do something less hacky!!
 	var domain_index = decrypted.indexOf(domain_mac.slice(0, domain_mac.length-1));
 	
 	if (domain_index != -1) {
@@ -173,18 +169,18 @@ var keychain = function() {
   keychain.set = function(name, value) {
       keychain.init_check();
       var domain_mac = HMAC(priv.secrets.hmac_key, name);
-      var salt = HMAC(priv.secrets.salt_key, priv.data.salt_counter);
-      priv.data.salt_counter++;
 
-      var pwd_blob = value + bitarray_to_base64(domain_mac) + bitarray_to_base64(salt);
-      var padding_len = 600 - pwd_blob.length - 1;
+      var pwd_blob = value + bitarray_to_base64(domain_mac);
+
+      // -1 for the "1" at the start of the padding
+      var zpadding_len = ENC_PWD_LEN - pwd_blob.length - 1; 
       var padding = "1";
-      for (var i=0; i < padding_len; i++) {
+      for (var i=0; i < zpadding_len; i++) {
 	      padding += "0";
       }
       pwd_blob += padding
       
-      priv.data.entries[bitarray_to_base64(domain_mac)] = (enc_gcm(priv.secrets.cipher, base64_to_bitarray(pwd_blob)));
+      priv.data.entries[bitarray_to_base64(domain_mac)] = enc_gcm(priv.secrets.cipher, base64_to_bitarray(pwd_blob));
   }
 
   /**
